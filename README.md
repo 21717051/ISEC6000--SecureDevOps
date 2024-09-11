@@ -48,12 +48,6 @@ Before setting up, ensure you have:
    gcloud container clusters create saleor-cluster --num-nodes=3
    ```
 
-4. **Deploy the Application to Kubernetes**
-   ```bash
-   kubectl apply -f kubernetes/saleor-deployment.yaml
-   kubectl apply -f kubernetes/saleor-service.yaml
-   ```
-
 5. **Access the Saleor Dashboard**
    - The dashboard should be accessible via `http://<Cluster-IP>:9002`.
 
@@ -79,5 +73,5 @@ Before setting up, ensure you have:
 - First-time deployment may take longer than expected. Restart the services if needed.
 
 ## Authors
-- **Imani (Student ID: 21717051)**
+- **urva patel (Student ID: 21717051)**
 
