@@ -1,0 +1,139 @@
+services:
+  # Saleor API service
+  api:
+    image: ghcr.io/saleor/saleor:3.20
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    stdin_open: true
+    tty: true
+    depends_on:
+      - db
+      - redis
+      - jaeger
+    volumes:
+      - saleor-media:/app/media
+    env_file:
+      - common.env
+      - backend.env
+      - custom.env  # Load RSA key from custom.env
+    environment:
+      - JAEGER_AGENT_HOST=jaeger
+      - DASHBOARD_URL=http://localhost:9002/  # Dashboard runs on localhost
+      - ALLOWED_HOSTS=34.71.121.114,localhost,api  # Include domain and localhost
+      - CORS_ALLOWED_ORIGINS=http://localhost:9002,https://34.71.121.114  # Allow dashboard and domain
+
+  # Saleor Dashboard service
+  dashboard:
+    image: ghcr.io/saleor/saleor-dashboard:latest
+    ports:
+      - "9002:80"  # Exposing port 9002 on localhost
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    environment:
+      - API_URL=http://34.71.121.114:8000/  # Pointing to Saleor API running on your domain IP
+
+  # PostgreSQL database service
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    volumes:
+      - saleor-db:/var/lib/postgresql/data
+      - ./replica_user.sql:/docker-entrypoint-initdb.d/replica_user.sql
+    environment:
+      - POSTGRES_USER=saleor
+      - POSTGRES_PASSWORD=saleor
+      - POSTGRES_DB=saleor
+
+  # Redis service for caching
+  redis:
+    image: redis:7.0-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    volumes:
+      - saleor-redis:/data
+
+  # Worker service for background tasks
+  worker:
+    image: ghcr.io/saleor/saleor:3.20
+    command: celery -A saleor --app=saleor.celeryconf:app worker --loglevel=info -B
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    env_file:
+      - common.env
+      - backend.env
+      - custom.env  # Load RSA key from custom.env
+    depends_on:
+      - redis
+      - mailpit
+    volumes:
+      - saleor-media:/app/media
+
+  # NGINX reverse proxy service
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"   # HTTP port
+      - "443:443" # HTTPS port
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    depends_on:
+      - api
+      - dashboard
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf  # NGINX configuration
+      - ./nginx/certs:/etc/nginx/certs  # SSL certificates
+
+  # Jaeger service for tracing
+  jaeger:
+    image: jaegertracing/all-in-one
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+      - "9411:9411"
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    volumes:
+      - type: tmpfs
+        target: /tmp
+
+  # Mailpit service for email testing
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web UI for email checks
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+
+# Volumes for data persistence
+volumes:
+  saleor-db:
+    driver: local
+  saleor-redis:
+    driver: local
+  saleor-media:
+    driver: local
+
+# Network configuration
+networks:
+  saleor-backend-tier:
+    driver: bridge
